@@ -4,6 +4,49 @@ define("ALIGN_LEFT", "left");
 define("ALIGN_CENTER", "center");
 define("ALIGN_RIGHT", "right");
 
+function calculateTextBox($font_size, $font_angle, $font_file, $text) {
+    $box = imagettfbbox($font_size, $font_angle, $font_file, $text);
+    if (!$box) {
+        return false;
+    }
+    $min_x = min(array($box[0], $box[2], $box[4], $box[6]));
+    $max_x = max(array($box[0], $box[2], $box[4], $box[6]));
+    $min_y = min(array($box[1], $box[3], $box[5], $box[7]));
+    $max_y = max(array($box[1], $box[3], $box[5], $box[7]));
+    $width = $max_x - $min_x;
+    $height = $max_y - $min_y;
+    $left = abs($min_x) + $width;
+    $top = abs($min_y) + $height;
+    // to calculate the exact bounding box i write the text in a large image
+    $img = @imagecreatetruecolor($width << 2, $height << 2);
+    $white = imagecolorallocate($img, 255, 255, 255);
+    $black = imagecolorallocate($img, 0, 0, 0);
+    imagefilledrectangle($img, 0, 0, imagesx($img), imagesy($img), $black);
+    // for sure the text is completely in the image!
+    imagettftext($img, $font_size, $font_angle, $left, $top, $white, $font_file, $text);
+    // start scanning (0=> black => empty)
+    $rleft = $w4 = $width << 2;
+    $rright = 0;
+    $rbottom = 0;
+    $rtop = $h4 = $height << 2;
+    for ($x = 0; $x < $w4; $x++)
+        for ($y = 0; $y < $h4; $y++)
+            if (imagecolorat($img, $x, $y)) {
+                $rleft = min($rleft, $x);
+                $rright = max($rright, $x);
+                $rtop = min($rtop, $y);
+                $rbottom = max($rbottom, $y);
+            }
+    // destroy img and serve the result
+    imagedestroy($img);
+    return array(
+        "left" => $left - $rleft,
+        "top" => $top - $rtop,
+        "width" => $rright - $rleft + 1,
+        "height" => $rbottom - $rtop + 1
+    );
+}
+
 /**
  *
  * @param type $image - true color image object
@@ -30,34 +73,38 @@ function myimagettftextbox(&$image, $size, $angle, $left, $top, $color, $font, $
         $line_widths = array();
         $line_heights = array();
         $line_ys = array();
+        $index = 0;
         $sum_height = 0;
         /**
-         * calculate properties for each line 
+         * calculate properties for each line
          */
-        foreach ($text_lines as $index => $block) {
-            $dimensions = imagettfbbox($size, $angle, $font, $block);
-            $line_width = abs($dimensions[0]) + abs($dimensions[2]);
-            $line_height = abs($dimensions[5]) + abs($dimensions[1]);
-            $line_y = abs($dimensions[5]);
+        foreach ($text_lines as $block) {
+            $dimensions = calculateTextBox($size, $angle, $font, $block);
+            $line_width = $dimensions['width'];
+            $line_height = $dimensions['height'];
+            $line_y = $dimensions['top'];
             $lines[$index] = $block;
             $line_widths[$index] = $line_width;
             $line_heights[$index] = $line_height;
             $line_ys[$index] = $line_y;
             $sum_height += $line_height;
+            $index++;
         }
         $max_width = max($line_widths);
         $max_width = $max_width + floor(($width - $max_width) / 2);
+        $index = 0;
         $delta_h = floor(($height - $sum_height) / (count($lines) - 1));
         $top_offset = 0;
         $left_offset = 0;
-        foreach ($lines as $index => $line) {
+        foreach ($lines as $line) {
             if ($align == ALIGN_CENTER) {
                 $left_offset = ($max_width - $line_widths[$index]) / 2;
             } elseif ($align == ALIGN_RIGHT) {
                 $left_offset = ($max_width - $line_widths[$index]);
             }
-            imagettftext($image, $size, $angle, $left_offset - $left, $line_ys[$index] + $top_offset, $color, $font, $line);
+            imagettftext($image, $size, $angle, $left_offset + $left, $line_ys[$index] + $top_offset, $color, $font, $line);
             $top_offset += (isset($line_heights[$index]) ? $line_heights[$index] : 0) + $delta_h;
+            $index++;
         }
     }
 }
